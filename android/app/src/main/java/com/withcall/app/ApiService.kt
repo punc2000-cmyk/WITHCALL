@@ -5,55 +5,62 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
+import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
-/**
- * 서버 API 통신 (OkHttp 사용)
- * - getDevices: 최신 배치의 pending 단말기 목록 조회
- * - markComplete: 단말기 업무완료 처리
- */
 object ApiService {
+
+    const val SERVER_URL = "https://withcall.pages.dev"
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .build()
 
-    private val JSON_TYPE = "application/json; charset=utf-8".toMediaType()
+    private val JSON = "application/json; charset=utf-8".toMediaType()
 
     /**
-     * pending 상태의 단말기 목록을 서버에서 조회
+     * 연락처 등록여부 업데이트
+     * @param deviceId  DB devices.id
+     * @param contactIndex  1~5
+     * @param status  "변경완료" | "에러"
      */
-    fun getDevices(serverUrl: String): List<Device> {
-        val url = "${serverUrl.trimEnd('/')}/api/devices?status=pending"
-        val request = Request.Builder().url(url).get().build()
-
-        val response = client.newCall(request).execute()
-        val body = response.body?.string() ?: "[]"
-
-        val arr = JSONArray(body)
-        return (0 until arr.length()).map { i ->
-            val obj = arr.getJSONObject(i)
-            Device(
-                id          = obj.getInt("id"),
-                phoneNumber = obj.getString("phone_number"),
-                msgB        = obj.optString("msg_b", ""),
-                msgC        = obj.optString("msg_c", ""),
-                msgD        = obj.optString("msg_d", ""),
-                msgE        = obj.optString("msg_e", ""),
-                msgF        = obj.optString("msg_f", ""),
-                status      = obj.optString("status", "pending")
-            )
-        }
+    /** phase: "119" | "care" */
+    fun updateContactStatus(deviceId: Int, contactIndex: Int, status: String, phase: String) {
+        val body = JSONObject()
+            .put("contactIndex", contactIndex)
+            .put("status", status)
+            .put("phase", phase)
+            .toString()
+            .toRequestBody(JSON)
+        val request = Request.Builder()
+            .url("$SERVER_URL/api/devices/$deviceId/contact-status")
+            .patch(body)
+            .build()
+        client.newCall(request).execute().close()
     }
 
-    /**
-     * 단말기 업무완료 처리 (status = completed)
-     */
-    fun markComplete(serverUrl: String, deviceId: Int) {
-        val url = "${serverUrl.trimEnd('/')}/api/devices/$deviceId/complete"
-        val body = "{}".toRequestBody(JSON_TYPE)
-        val request = Request.Builder().url(url).patch(body).build()
-        client.newCall(request).execute().close()
+    fun getDevices(): List<Device> {
+        val request = Request.Builder()
+            .url("$SERVER_URL/api/devices?status=pending")
+            .get()
+            .build()
+
+        val body = client.newCall(request).execute().body?.string() ?: "[]"
+        val arr = JSONArray(body)
+
+        return (0 until arr.length()).map { i ->
+            val o = arr.getJSONObject(i)
+            Device(
+                rowIndex  = o.getInt("id"),
+                phone119  = o.optString("phone_119",  ""),
+                phoneCare = o.optString("phone_care", ""),
+                contact1  = o.optString("contact_1",  ""),
+                contact2  = o.optString("contact_2",  ""),
+                contact3  = o.optString("contact_3",  ""),
+                contact4  = o.optString("contact_4",  ""),
+                contact5  = o.optString("contact_5",  "")
+            )
+        }
     }
 }
